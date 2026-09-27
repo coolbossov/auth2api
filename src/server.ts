@@ -12,6 +12,7 @@ import {
   createCountTokensHandler,
 } from "./handlers/anthropic";
 import { StatsRecorder } from "./stats/recorder";
+import { createPortalHandlers } from "./handlers/portal";
 
 // Simple in-memory rate limiter per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -263,6 +264,10 @@ export function createServer(
     );
     res.json({ object: "list", data });
   });
+
+  const portal = createPortalHandlers(config, registry);
+  app.get("/v1/portal/contract", portal.contract);
+  app.post("/v1/portal/responses", portal.responses);
 
   // Routes — OpenAI compatible
   app.post(
