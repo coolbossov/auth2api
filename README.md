@@ -44,7 +44,7 @@ npm run build
 auth2api supports these upstream providers:
 
 - `anthropic` — Claude OAuth (default). Used for `claude-*` models.
-- `codex` — OpenAI's "Sign in with ChatGPT" OAuth, talking to the official codex backend at `https://chatgpt.com/backend-api/codex/responses`. Used for `gpt-5*` (incl. `gpt-5-codex`), `o\d*`, and `codex-*` models. Requires a **ChatGPT Plus or Pro** subscription — Free accounts authenticate but the first call fails with `model not supported`.
+- `codex` — OpenAI's "Sign in with ChatGPT" OAuth, talking to the official codex backend at `https://chatgpt.com/backend-api/codex/responses`. Used for `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5*` (incl. `gpt-5-codex`), `o\d*`, and `codex-*` models. Availability depends on the signed-in account.
 - `cursor` — experimental Cursor account, authorized either through a browser deep-link PKCE flow (default) or by importing the local Cursor desktop login. **Routing**: in multi-provider setups Cursor only serves models with an explicit `cursor-*` or `cr/*` prefix. In **Cursor-exclusive mode** (only Cursor is logged in, no `anthropic`/`codex` accounts), every request — including bare `claude-*` or `gpt-*` model names — is auto-routed through Cursor so off-the-shelf Claude Code / OpenAI clients work without a prefix.
 
 Pick the provider with `--provider=`. Default is `anthropic`.
@@ -153,7 +153,7 @@ curl http://127.0.0.1:8317/v1/chat/completions \
 
 ### Available models
 
-`GET /v1/models` lists only models for providers you've actually logged in to. The codex list is **fetched live** from `chatgpt.com/backend-api/codex/models` (cached 5 minutes, ETag-aware) so it always matches what your account can actually serve. Cursor models are fetched from Cursor's internal AvailableModels endpoint when possible, with a small fallback list. The current ChatGPT-account-supported set at the time of writing:
+`GET /v1/models` lists only models for providers you've actually logged in to. The Codex list is fetched from `chatgpt.com/backend-api/codex/models` with a 5-minute, ETag-aware cache. On an upstream error it may return a stale or static fallback list, so a catalog entry alone does not prove generation. The catalog query uses the same effective `cloaking.codex.cli-version` as Codex generation headers. Cursor models are fetched from Cursor's internal AvailableModels endpoint when possible, with a small fallback list. Examples of account-dependent models:
 
 | Model ID                                             | Provider  | Description                                        |
 | ---------------------------------------------------- | --------- | -------------------------------------------------- |
@@ -162,6 +162,9 @@ curl http://127.0.0.1:8317/v1/chat/completions \
 | `claude-sonnet-4-6`                                  | anthropic | Claude Sonnet 4.6                                  |
 | `claude-haiku-4-5-20251001`                          | anthropic | Claude Haiku 4.5                                   |
 | `claude-haiku-4-5`                                   | anthropic | Alias for Claude Haiku 4.5                         |
+| `gpt-6-astra`                                        | codex     | GPT-6 Astra, when available to the account        |
+| `gpt-6-sol`                                          | codex     | GPT-6 Sol, when available to the account          |
+| `gpt-6-luna`                                         | codex     | GPT-6 Luna, when available to the account         |
 | `gpt-5.5`                                            | codex     | GPT-5.5 (reasoning model)                          |
 | `gpt-5.4`                                            | codex     | GPT-5.4                                            |
 | `gpt-5.4-mini`                                       | codex     | GPT-5.4 Mini                                       |
@@ -178,7 +181,7 @@ Short convenience aliases accepted by auth2api:
 - `sonnet` -> `claude-sonnet-4-6`
 - `haiku` -> `claude-haiku-4-5-20251001`
 
-Routing: requests are dispatched to the matching pool by model name. `claude-*` and the bare aliases (`opus`/`sonnet`/`haiku`) hit your Claude account; `gpt-5*`, `o\d` (`o3`, `o4-mini`, …), and `codex-*` hit your Codex account; `cursor-*` and `cr/*` hit your Cursor account. Other model families (`gpt-3.5-*`, `gpt-4*`, …) are not served by either backend and route to anthropic by default. If you haven't logged into the matching provider, the request returns `503 no_account_for_provider` with the exact `--login` command to fix it.
+Routing: requests are dispatched to the matching pool by model name. `claude-*` and the bare aliases (`opus`/`sonnet`/`haiku`) hit your Claude account; the three listed `gpt-6-*` IDs, `gpt-5*`, `o\d` (`o3`, `o4-mini`, …), and `codex-*` hit your Codex account; `cursor-*` and `cr/*` hit your Cursor account. Other model families (`gpt-3.5-*`, `gpt-4*`, …) are not served by either backend and route to anthropic by default. If you haven't logged into the matching provider, the request returns `503 no_account_for_provider` with the exact `--login` command to fix it.
 
 #### "Cursor exclusive" mode (zero-config Claude Code / OpenAI clients)
 

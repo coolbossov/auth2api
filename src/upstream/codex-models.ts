@@ -3,7 +3,6 @@ import { AccountManager } from "../accounts/manager";
 const BASE_URL = "https://chatgpt.com/backend-api";
 const MODELS_PATH = "/codex/models";
 const CACHE_TTL_MS = 5 * 60 * 1000; // matches codex-rs/models-manager DEFAULT_MODEL_CACHE_TTL
-const CLIENT_VERSION = "auth2api/1.0.0";
 
 // Static fallback used when no account is loaded or the upstream /codex/models
 // call fails. User-confirmed list of models currently accepted by the
@@ -31,18 +30,20 @@ interface CacheEntry {
   fetchedAt: number;
   etag: string | null;
   models: UpstreamModel[];
+  clientVersion: string;
 }
 
 let cache: CacheEntry | null = null;
 
 async function fetchUpstream(
   manager: AccountManager,
+  clientVersion: string,
 ): Promise<{ models: UpstreamModel[]; etag: string | null } | null> {
   const result = manager.getNextAccount();
   if (!result.account) return null;
   const account = result.account;
 
-  const url = `${BASE_URL}${MODELS_PATH}?client_version=${encodeURIComponent(CLIENT_VERSION)}`;
+  const url = `${BASE_URL}${MODELS_PATH}?client_version=${encodeURIComponent(clientVersion)}`;
   const headers: Record<string, string> = {
     Authorization: `Bearer ${account.token.accessToken}`,
     Accept: "application/json",
@@ -51,7 +52,7 @@ async function fetchUpstream(
   if (account.chatgptAccountId) {
     headers["ChatGPT-Account-ID"] = account.chatgptAccountId;
   }
-  if (cache?.etag) {
+  if (cache?.clientVersion === clientVersion && cache.etag) {
     headers["If-None-Match"] = cache.etag;
   }
 
@@ -72,7 +73,7 @@ async function fetchUpstream(
   }
 
   // 304 Not Modified — cache is still valid.
-  if (resp.status === 304 && cache) {
+  if (resp.status === 304 && cache?.clientVersion === clientVersion) {
     return { models: cache.models, etag: cache.etag };
   }
 
@@ -101,24 +102,26 @@ async function fetchUpstream(
 
 export async function listCodexModels(
   manager: AccountManager,
+  clientVersion: string,
 ): Promise<Array<{ id: string; owned_by: string }>> {
   // Cache hit within TTL — return immediately.
-  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+  if (cache?.clientVersion === clientVersion && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.models.map((m) => ({ id: m.slug, owned_by: "openai" }));
   }
 
-  const fresh = await fetchUpstream(manager);
+  const fresh = await fetchUpstream(manager, clientVersion);
   if (fresh) {
     cache = {
       fetchedAt: Date.now(),
       etag: fresh.etag,
       models: fresh.models,
+      clientVersion,
     };
     return fresh.models.map((m) => ({ id: m.slug, owned_by: "openai" }));
   }
 
   // Stale-while-error: prefer slightly-stale cache over fallback if we have one.
-  if (cache) {
+  if (cache?.clientVersion === clientVersion) {
     return cache.models.map((m) => ({ id: m.slug, owned_by: "openai" }));
   }
 

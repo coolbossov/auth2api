@@ -4,6 +4,7 @@ import { buildAnthropicProvider } from "./anthropic";
 import { buildCodexProvider } from "./codex";
 import { buildCursorProvider } from "./cursor";
 import { Provider } from "./types";
+import type { Config } from "../config";
 
 export interface ProviderRegistry {
   get(id: ProviderId): Provider;
@@ -14,9 +15,9 @@ export interface ProviderRegistry {
   withAccounts(): Provider[];
 }
 
-export function buildRegistry(authDir: string): ProviderRegistry {
+export function buildRegistry(authDir: string, config?: Config): ProviderRegistry {
   const anthropic = buildAnthropicProvider(authDir);
-  const codex = buildCodexProvider(authDir);
+  const codex = buildCodexProvider(authDir, config);
   const cursor = buildCursorProvider(authDir);
   const byId: Record<ProviderId, Provider> = { anthropic, codex, cursor };
   const ordered: Provider[] = [anthropic, codex, cursor];

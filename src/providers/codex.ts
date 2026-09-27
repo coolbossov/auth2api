@@ -9,6 +9,8 @@ import {
 } from "../auth/codex/oauth";
 import { callCodexResponses } from "../upstream/codex-api";
 import { listCodexModels } from "../upstream/codex-models";
+import { codexCliVersion } from "../upstream/codex-version";
+import type { Config } from "../config";
 import { Provider, UpstreamCallContext, ProviderOAuthInfo } from "./types";
 
 const CODEX_OAUTH: ProviderOAuthInfo = {
@@ -16,11 +18,11 @@ const CODEX_OAUTH: ProviderOAuthInfo = {
   callbackPath: CODEX_CALLBACK_PATH,
 };
 
-// gpt-5*, o\d* (o3, o4-mini), codex-* — but NOT legacy gpt-3/gpt-4* which the
-// codex backend doesn't serve.
-const MODEL_RE = /^(gpt-5(\.|-)|gpt-5$|o\d|codex-)/i;
+// GPT-6 has three explicitly supported IDs; older Codex families retain their
+// existing matching rules. Unknown IDs still follow the registry fallback.
+const MODEL_RE = /^(gpt-6-(astra|sol|luna)$|gpt-5(\.|-)|gpt-5$|o\d|codex-)/i;
 
-export function buildCodexProvider(authDir: string): Provider {
+export function buildCodexProvider(authDir: string, config?: Config): Provider {
   const manager = new AccountManager(authDir, {
     provider: "codex",
     refresh: async (rt: string): Promise<TokenData> => {
@@ -48,7 +50,7 @@ export function buildCodexProvider(authDir: string): Provider {
       );
       return { ...token, provider: "codex" };
     },
-    listModels: () => listCodexModels(manager),
+    listModels: () => listCodexModels(manager, codexCliVersion(config)),
     callMessages: (opts: UpstreamCallContext) =>
       callCodexResponses({
         body: opts.body,

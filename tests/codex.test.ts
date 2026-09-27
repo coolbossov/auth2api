@@ -82,7 +82,13 @@ test("providerForModel routes by model name", () => {
     assert.equal(registry.forModel("mythos").id, "anthropic");
     assert.equal(registry.forModel("opus").id, "anthropic");
     assert.equal(registry.forModel("claude-opus-4-7").id, "anthropic");
-    // Codex — gpt-5 family + o-series + codex- prefix
+    // Codex — supported GPT-6 IDs, gpt-5 family, o-series, codex- prefix
+    for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+      assert.equal(registry.forModel(model).id, "codex");
+    }
+    assert.equal(registry.forModel("gpt-6-unknown").id, "anthropic");
+    assert.equal(registry.forModel("gpt-6-astra-extra").id, "anthropic");
+    assert.equal(registry.forModel("gpt-6-astra:beta").id, "anthropic");
     assert.equal(registry.forModel("gpt-5").id, "codex");
     assert.equal(registry.forModel("gpt-5-codex").id, "codex");
     assert.equal(registry.forModel("gpt-5.5").id, "codex");
@@ -787,6 +793,16 @@ test("codex headers include `version` (parity with official CLI provider header)
   assert.equal(headers.version, "0.41.0");
   // Authoring sanity-check: the value must not equal the auth bearer.
   assert.notEqual(headers.version, headers.Authorization);
+});
+
+test("codex headers default to a current version for GPT-6", () => {
+  const headers = __buildCodexHeaders(
+    makeAvailableAccount(),
+    true,
+    makeCodexConfig(),
+  );
+  assert.equal(headers.version, "0.156.1");
+  assert.match(headers["User-Agent"], /0\.156\.1/);
 });
 
 test("codex headers include the always-protocol-required set", () => {
