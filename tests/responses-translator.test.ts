@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 
 import {
   chatToResponsesRequest,
@@ -761,4 +762,79 @@ test("drainCodexResponsesSse: surfaces response.failed errors", async () => {
   const drained = await drainCodexResponsesSse(resp);
   assert.equal(drained.upstreamError, "boom");
   assert.equal(drained.completedResponse, null);
+});
+
+// Strict consumers opt into cancellation; ordinary compatibility drains do not.
+test("strict drain rejects an already aborted request and releases its reader", { timeout: 1000 }, async () => {
+  const abort = new AbortController();
+  const reason = new Error("synthetic disconnected client");
+  let cancellations = 0;
+  const body = new ReadableStream<Uint8Array>({
+    cancel(received) {
+      assert.equal(received, reason);
+      cancellations++;
+    },
+  });
+  abort.abort(reason);
+  await assert.rejects(drainCodexResponsesSse(new Response(body), abort.signal), reason);
+  assert.equal(cancellations, 1);
+  assert.equal(body.locked, false);
+  assert.equal(getEventListeners(abort.signal, "abort").length, 0);
+});
+
+test("strict drain cancels a pending read without waiting for provider acknowledgment", async () => {
+  const abort = new AbortController();
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let cancellations = 0;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      stream = controller;
+      controller.enqueue(new TextEncoder().encode('event: response.output_text.delta\ndata: {"delta":"partial"}\n\n'));
+    },
+    cancel() {
+      cancellations++;
+      // A local cancel must finish even if provider acknowledgment never arrives.
+      return new Promise<void>(() => {});
+    },
+  });
+  const draining = drainCodexResponsesSse(new Response(body), abort.signal);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const reason = new Error("synthetic midstream disconnect");
+  abort.abort(reason);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      assert.rejects(draining, reason),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("drain ignored abort")), 100); }),
+    ]);
+    assert.equal(cancellations, 1);
+    assert.equal(body.locked, false);
+    assert.equal(getEventListeners(abort.signal, "abort").length, 0);
+  } finally {
+    clearTimeout(timer);
+    if (cancellations === 0) stream.close();
+  }
+});
+
+test("strict drain releases reader and abort listener after successful terminal output", async () => {
+  const abort = new AbortController();
+  const response = makeStreamingResponse([
+    'event: response.completed\ndata: {"response":{"status":"completed","model":"gpt-6-luna","output":[]}}\n\n',
+  ]);
+  const drained = await drainCodexResponsesSse(response, abort.signal);
+  assert.equal(drained.completedResponse.model, "gpt-6-luna");
+  assert.equal(response.body!.locked, false);
+  assert.equal(getEventListeners(abort.signal, "abort").length, 0);
+});
+
+
+test("strict drain releases its reader and listener when upstream reading fails", async () => {
+  const abort = new AbortController();
+  const reason = new Error("synthetic upstream stream failure");
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.error(reason); },
+  });
+  await assert.rejects(drainCodexResponsesSse(new Response(body), abort.signal), reason);
+  assert.equal(body.locked, false);
+  assert.equal(getEventListeners(abort.signal, "abort").length, 0);
 });

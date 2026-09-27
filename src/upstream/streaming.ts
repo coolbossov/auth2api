@@ -36,46 +36,74 @@ import { UsageData } from "../accounts/manager";
  */
 export async function* readSseEvents(
   upstream: Response,
+  signal?: AbortSignal,
 ): AsyncGenerator<{ event: string; data: any }> {
   const reader = upstream.body?.getReader();
-  if (!reader) return;
+  if (!reader) {
+    signal?.throwIfAborted();
+    return;
+  }
   const decoder = new TextDecoder();
   let buf = "";
   let event = "";
   let finished = false;
 
-  while (!finished) {
-    const r = await reader.read();
-    if (r.done) {
-      buf += decoder.decode();
-      finished = true;
-    } else {
-      buf += decoder.decode(r.value, { stream: true });
-    }
-    const lines = buf.split("\n");
-    // Hold the trailing partial line back unless this is the final
-    // flush, in which case any leftover (un-terminated) line is
-    // consumed too.
-    buf = finished ? "" : (lines.pop() ?? "");
-    for (const raw of lines) {
-      const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-      if (!line) {
-        event = "";
-        continue;
+  // Only strict callers opt in. Local reader cancellation requests transport
+  // cleanup; it does not establish that the provider stopped generation.
+  let cancelRequested = false;
+  const cancelReader = () => {
+    if (cancelRequested) return;
+    cancelRequested = true;
+    // Closing the reader settles pending reads immediately. Do not wait for
+    // an underlying source's potentially missing cancellation acknowledgment.
+    void reader.cancel(signal?.reason).catch(() => undefined);
+  };
+  signal?.addEventListener("abort", cancelReader, { once: true });
+  if (signal?.aborted) cancelReader();
+
+  try {
+    while (!finished) {
+      signal?.throwIfAborted();
+      const r = await reader.read();
+      signal?.throwIfAborted();
+      if (r.done) {
+        buf += decoder.decode();
+        finished = true;
+      } else {
+        buf += decoder.decode(r.value, { stream: true });
       }
-      if (line.startsWith("event:")) {
-        event = line.slice(6).trim();
-      } else if (line.startsWith("data:")) {
-        const payload = line.slice(5).trim();
-        if (!payload) continue;
-        let parsed: any = null;
-        try {
-          parsed = JSON.parse(payload);
-        } catch {
-          /* leave parsed as null; pass-through for callers that want raw */
+      const lines = buf.split("\n");
+      // Hold the trailing partial line back unless this is the final
+      // flush, in which case any leftover (un-terminated) line is
+      // consumed too.
+      buf = finished ? "" : (lines.pop() ?? "");
+      for (const raw of lines) {
+        const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+        if (!line) {
+          event = "";
+          continue;
         }
-        yield { event, data: parsed };
+        if (line.startsWith("event:")) {
+          event = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
+          let parsed: any = null;
+          try {
+            parsed = JSON.parse(payload);
+          } catch {
+            /* leave parsed as null; pass-through for callers that want raw */
+          }
+          signal?.throwIfAborted();
+          yield { event, data: parsed };
+        }
       }
+    }
+  } finally {
+    if (signal) {
+      signal.removeEventListener("abort", cancelReader);
+      if (!finished) cancelReader();
+      reader.releaseLock();
     }
   }
 }
