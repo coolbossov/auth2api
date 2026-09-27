@@ -136,6 +136,8 @@ export interface CallCodexResponsesOptions {
   config: Config;
   signal?: AbortSignal;
   path?: typeof RESPONSES_PATH | typeof RESPONSES_COMPACT_PATH;
+  /** Strict consumers reject redirects so a POST cannot be replayed elsewhere. */
+  rejectRedirects?: boolean;
 }
 
 export async function callCodexResponses(
@@ -165,6 +167,7 @@ export async function callCodexResponses(
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      redirect: options.rejectRedirects ? "error" : undefined,
       signal: withTimeoutSignal(timeoutMs, options.signal),
     });
   } catch (err: any) {

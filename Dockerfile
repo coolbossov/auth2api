@@ -8,6 +8,9 @@ RUN npx tsc
 
 FROM node:20-alpine
 WORKDIR /app
+ARG AUTH2API_BUILD_ID=unverified
+ENV AUTH2API_BUILD_ID=${AUTH2API_BUILD_ID}
+LABEL org.opencontainers.image.revision=${AUTH2API_BUILD_ID}
 COPY --from=builder /app/dist dist/
 COPY --from=builder /app/node_modules node_modules/
 COPY package.json ./

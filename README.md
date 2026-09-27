@@ -225,6 +225,39 @@ The ChatGPT codex backend rejects requests that don't include `stream: true`, `s
 
 Off-the-shelf OpenAI Responses / Chat / Claude Code clients all just work without knowing about codex's quirks.
 
+#### Strict Portal Responses contract
+
+The Portal uses separate authenticated routes. `GET /v1/portal/contract` returns
+`{ contract: "portal-v1", build, scope, capabilities }`. The build is the full
+source commit SHA baked into the image with
+`docker build --build-arg AUTH2API_BUILD_ID=<exact-40-character-source-sha> ...`.
+An image built without that argument leaves both Portal routes unavailable
+(`503`); the ordinary API routes continue to work. `scope` is an opaque,
+stable digest of the selected Codex account, plan tier and build. It changes
+when those inputs change, so clients must requalify after a scope change.
+
+`POST /v1/portal/responses` requires the normal API key plus
+`X-Auth2api-Contract: portal-v1`, `X-Auth2api-Build: <build>` and
+`X-Auth2api-Scope: <scope>`. It accepts the exact models listed by the contract,
+an explicit reasoning effort, `store: false`, and a non-streaming Responses
+request. The gateway selects Codex directly, checks the selected account and
+all preconditions before forwarding, and makes at most one upstream generation
+request. It returns a response only after a completed upstream event with the
+exact requested model and output items. Successful responses carry gateway-owned
+`X-Auth2api-Provider`, `X-Auth2api-Contract`, `X-Auth2api-Build`, and
+`X-Auth2api-Scope` headers. The route never substitutes a model/provider or
+returns incomplete output as success. `max_output_tokens` remains advisory:
+the Codex backend rejects that field, so the gateway removes it and reports
+`capabilities.enforcedOutputCap: false`.
+The contract also reports the configured `capabilities.requestBodyLimit`;
+Express rejects larger JSON bodies before this route dispatches.
+
+The contract's model and effort lists describe what this transport will accept;
+they do not prove a specific account can complete every combination or input
+size. Qualify those separately before choosing Portal defaults. The ordinary
+`/v1/responses` compatibility route keeps its existing routing and retry
+behavior for other consumers.
+
 #### Cursor `/v1/responses` limitations
 
 Cursor's chat protocol is reverse-engineered: requests go to `api2.cursor.sh/aiserver.v1.ChatService/StreamUnifiedChatWithTools` over HTTP/2 + `application/connect+proto`, and the response is decoded back into OpenAI Responses SSE deltas. Stream is forced on (Cursor only supports streaming). Tool calls, images, repository context, edit actions, and Cursor's richer agent protocol are intentionally not translated yet — only single-turn streaming text is supported.
@@ -237,6 +270,8 @@ The decoder routes Cursor's chain-of-thought (`reasoning`) bytes to `response.re
 | -------------------------------- | --------------------------------------------------------------------- |
 | `POST /v1/chat/completions`      | OpenAI-compatible chat                                                |
 | `POST /v1/responses`             | OpenAI Responses API compatibility                                    |
+| `GET /v1/portal/contract`        | Strict Portal transport identity and accepted capabilities            |
+| `POST /v1/portal/responses`      | One-attempt, Codex-only, terminal-validated Portal Responses          |
 | `POST /v1/messages`              | Claude native passthrough                                             |
 | `POST /v1/messages/count_tokens` | Claude token counting                                                 |
 | `GET /v1/models`                 | List available models                                                 |
