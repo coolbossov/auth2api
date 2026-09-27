@@ -248,6 +248,30 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   assert.equal(switched.status, 200);
   assert.notEqual(switched.body.scope, contract.body.scope);
 
+  nextResponse = () =>
+    new Response(
+      event("response.completed", {
+        response: {
+          id: "resp_empty",
+          object: "response",
+          status: "completed",
+          model: MODEL,
+          output: [{ type: "message", content: [] }],
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  const missingText = await request("/v1/portal/responses", body, headers);
+  assert.equal(missingText.status, 502);
+  assert.equal(missingText.body.error.type, "portal_output_missing");
+  assert.equal(calls, 1, "missing text must fail after one upstream attempt");
+  calls = 0;
+  nextResponse = () =>
+    new Response(terminal(), {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+
   const success = await request("/v1/portal/responses", body, headers);
   assert.equal(success.status, 200);
   assert.equal(success.body.model, MODEL);

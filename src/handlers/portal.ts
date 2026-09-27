@@ -215,9 +215,21 @@ export function createPortalHandlers(
       ) {
         return fail(resp, 502, "portal_terminal_invalid");
       }
-      const output =
-        terminal.output.length > 0 ? terminal.output : drained.outputItems;
-      if (output.length === 0) return fail(resp, 502, "portal_output_missing");
+      const hasOutputText = (items: unknown[]): boolean =>
+        items.some((item) =>
+          !!item && typeof item === "object" &&
+          Array.isArray((item as { content?: unknown }).content) &&
+          (item as { content: unknown[] }).content.some((part) =>
+            !!part && typeof part === "object" &&
+            (part as { type?: unknown }).type === "output_text" &&
+            typeof (part as { text?: unknown }).text === "string" &&
+            (part as { text: string }).text.trim().length > 0,
+          ),
+        );
+      const output = hasOutputText(terminal.output)
+        ? terminal.output
+        : drained.outputItems;
+      if (!hasOutputText(output)) return fail(resp, 502, "portal_output_missing");
       const usage = drained.usage;
       codex().manager.recordSuccess(account.token.email, {
         inputTokens: usage?.input_tokens || 0,
