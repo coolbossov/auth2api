@@ -31,6 +31,14 @@ const REQUEST_FIELDS = new Set([
   "max_output_tokens",
 ]);
 
+function bodyLimitBytes(value: string): number | null {
+  const match = /^([1-9][0-9]*)(b|kb|mb|gb)$/i.exec(value.trim());
+  if (!match) return null;
+  const power = { b: 0, kb: 1, mb: 2, gb: 3 }[match[2].toLowerCase() as "b" | "kb" | "mb" | "gb"];
+  const bytes = Number(match[1]) * 1024 ** power;
+  return Number.isSafeInteger(bytes) ? bytes : null;
+}
+
 function fail(resp: ExpressResponse, status: number, code: string): void {
   resp.status(status).json({ error: { type: code, message: code } });
 }
@@ -79,6 +87,7 @@ export function createPortalHandlers(
   registry: ProviderRegistry,
 ) {
   const build = process.env.AUTH2API_BUILD_ID || "";
+  const configuredBodyLimitBytes = bodyLimitBytes(config["body-limit"]);
   const codex = () => registry.get("codex");
   const buildVerified = /^[0-9a-f]{40}$/.test(build);
   // The Codex account ID is a high-entropy UUID. The domain-separated digest
@@ -105,6 +114,7 @@ export function createPortalHandlers(
 
   const contract = (_req: Request, resp: ExpressResponse) => {
     if (!buildVerified) return fail(resp, 503, "portal_build_unverified");
+    if (configuredBodyLimitBytes === null) return fail(resp, 503, "portal_body_limit_unverified");
     const account = select();
     if (!account) return fail(resp, 503, "portal_codex_account_unavailable");
     const scope = scopeFor(account.accountUuid, account.token.planType);
@@ -120,6 +130,7 @@ export function createPortalHandlers(
         streaming: false,
         enforcedOutputCap: false,
         requestBodyLimit: config["body-limit"],
+        requestBodyLimitBytes: configuredBodyLimitBytes,
       },
     });
   };
@@ -129,6 +140,7 @@ export function createPortalHandlers(
     resp: ExpressResponse,
   ): Promise<void> => {
     if (!buildVerified) return fail(resp, 503, "portal_build_unverified");
+    if (configuredBodyLimitBytes === null) return fail(resp, 503, "portal_body_limit_unverified");
     if (
       req.header("X-Auth2api-Contract") !== CONTRACT ||
       req.header("X-Auth2api-Build") !== build ||

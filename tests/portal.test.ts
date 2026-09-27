@@ -106,6 +106,7 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   assert.equal(contract.body.capabilities.streaming, false);
   assert.equal(contract.body.capabilities.enforcedOutputCap, false);
   assert.equal(contract.body.capabilities.requestBodyLimit, "1mb");
+  assert.equal(contract.body.capabilities.requestBodyLimitBytes, 1024 * 1024);
   assert.ok(contract.body.capabilities.models.includes(MODEL));
   assert.match(contract.body.scope, /^[0-9a-f]{64}$/);
   assert.equal(contract.headers.get("X-Auth2api-Provider"), "codex");

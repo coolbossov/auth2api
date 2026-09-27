@@ -253,7 +253,8 @@ exact requested model and output items. Successful responses carry gateway-owned
 returns incomplete output as success. `max_output_tokens` remains advisory:
 the Codex backend rejects that field, so the gateway removes it and reports
 `capabilities.enforcedOutputCap: false`.
-The contract also reports the configured `capabilities.requestBodyLimit`;
+The contract also reports the configured `capabilities.requestBodyLimit` and
+its verified byte value in `capabilities.requestBodyLimitBytes`;
 Express rejects larger JSON bodies before this route dispatches.
 
 The contract's model and effort lists describe what this transport will accept;

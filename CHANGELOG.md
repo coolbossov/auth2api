@@ -16,6 +16,8 @@
 
 ## 2026-09-27 follow-up
 
+- Published the verified numeric request body limit so the Portal can compare
+  image payload capacity before allowing card OCR dispatch.
 - Added exact identity headers to contract discovery so clients can verify the
   source of the contract before qualifying a model/account combination.
 - Pinned strict POST dispatch to the exact available Codex account represented
