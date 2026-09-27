@@ -25,3 +25,4 @@
   contract discovery and generation from changing the account or producing an
   avoidable scope mismatch. If that account is unavailable, dispatch stops.
 - Require a nonempty terminal `output_text` part before the strict Portal route reports success, so a completed envelope without usable content cannot be mistaken for a publishable result.
+- Build the gateway image with the committed npm lockfile so the deployed dependencies match the verified candidate.
