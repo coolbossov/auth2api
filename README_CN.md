@@ -44,7 +44,7 @@ npm run build
 auth2api 支持以下上游 provider：
 
 - `anthropic`（默认）：Claude OAuth，对应 `claude-*` 模型。
-- `codex`：OpenAI 的 "Sign in with ChatGPT" OAuth，直连官方 codex 后端 `https://chatgpt.com/backend-api/codex/responses`，对应 `gpt-5*`（含 `gpt-5-codex`）、`o\d*`、`codex-*` 模型。**需要 ChatGPT Plus 或 Pro 订阅** —— Free 账号也能登录，但首次调用会被后端拒绝(`model not supported`)。
+- `codex`：OpenAI 的 "Sign in with ChatGPT" OAuth，直连官方 codex 后端 `https://chatgpt.com/backend-api/codex/responses`，对应 `gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5*`（含 `gpt-5-codex`）、`o\d*`、`codex-*` 模型。实际可用模型取决于登录账号。
 - `cursor`：实验性 Cursor 账号支持，默认走浏览器 PKCE deep-link 流程授权，也可以选择导入本机 Cursor Desktop 已登录的 token。**路由规则**：多 provider 同时登录时，Cursor 只服务带显式 `cursor-*` / `cr/*` 前缀的模型；进入 **Cursor-exclusive 模式**（即只有 Cursor 账号、没有 `anthropic`/`codex` 账号）后，所有请求 —— 包括裸的 `claude-*` 或 `gpt-*` 模型名 —— 都会自动路由到 Cursor，方便 Claude Code / OpenAI 客户端零改造直接用。
 
 通过 `--provider=` 选择登录哪个 provider，缺省为 `anthropic`。
@@ -153,7 +153,7 @@ curl http://127.0.0.1:8317/v1/chat/completions \
 
 ### 支持的模型
 
-`GET /v1/models` 只列出已登录 provider 的模型。Codex 列表是从 `chatgpt.com/backend-api/codex/models` **实时拉取**(5 分钟缓存 + ETag),始终与你的账号实际可用模型一致。Cursor 会尽量从内部 AvailableModels 端点拉取，失败时使用少量 fallback 模型。当前 ChatGPT 账号支持的 codex 模型集合:
+`GET /v1/models` 只列出已登录 provider 的模型。Codex 列表从 `chatgpt.com/backend-api/codex/models` 拉取，使用 5 分钟缓存与 ETag；上游出错时可能返回旧缓存或静态 fallback，因此列表本身不能证明生成可用。目录查询与生成请求使用同一个 `cloaking.codex.cli-version`。Cursor 会尽量从内部 AvailableModels 端点拉取，失败时使用少量 fallback 模型。以下模型是否可用取决于账号:
 
 | 模型 ID                                              | Provider  | 说明                                         |
 | ---------------------------------------------------- | --------- | -------------------------------------------- |
@@ -162,6 +162,9 @@ curl http://127.0.0.1:8317/v1/chat/completions \
 | `claude-sonnet-4-6`                                  | anthropic | Claude Sonnet 4.6                            |
 | `claude-haiku-4-5-20251001`                          | anthropic | Claude Haiku 4.5                             |
 | `claude-haiku-4-5`                                   | anthropic | Claude Haiku 4.5 别名                        |
+| `gpt-6-astra`                                        | codex     | GPT-6 Astra（账号可用时）                     |
+| `gpt-6-sol`                                          | codex     | GPT-6 Sol（账号可用时）                       |
+| `gpt-6-luna`                                         | codex     | GPT-6 Luna（账号可用时）                      |
 | `gpt-5.5`                                            | codex     | GPT-5.5(reasoning model)                     |
 | `gpt-5.4`                                            | codex     | GPT-5.4                                      |
 | `gpt-5.4-mini`                                       | codex     | GPT-5.4 Mini                                 |
@@ -178,7 +181,7 @@ auth2api 额外支持以下便捷别名：
 - `sonnet` -> `claude-sonnet-4-6`
 - `haiku` -> `claude-haiku-4-5-20251001`
 
-路由规则：根据模型名自动选择账号池。`claude-*` 与裸别名 `opus`/`sonnet`/`haiku` 走 Claude 账号；`gpt-5*`、`o\d`(`o3`、`o4-mini` 等)、`codex-*` 走 Codex 账号；`cursor-*` 和 `cr/*` 走 Cursor 账号。其它型号(`gpt-3.5-*`、`gpt-4*` 等)两个后端都不支持，默认 fallback 到 anthropic。如果对应 provider 未登录，请求会返回 `503 no_account_for_provider`，错误信息中带有需要执行的 `--login` 命令。
+路由规则：根据模型名自动选择账号池。`claude-*` 与裸别名 `opus`/`sonnet`/`haiku` 走 Claude 账号；上述三个 `gpt-6-*` ID、`gpt-5*`、`o\d`(`o3`、`o4-mini` 等)、`codex-*` 走 Codex 账号；`cursor-*` 和 `cr/*` 走 Cursor 账号。其它型号(`gpt-3.5-*`、`gpt-4*` 等)两个后端都不支持，默认 fallback 到 anthropic。如果对应 provider 未登录，请求会返回 `503 no_account_for_provider`，错误信息中带有需要执行的 `--login` 命令。
 
 #### "Cursor 独占" 模式（让 Claude Code / OpenAI SDK 零配置可用）
 
