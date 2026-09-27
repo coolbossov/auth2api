@@ -60,6 +60,7 @@ export interface DrainedCodexResponses {
  */
 export async function drainCodexResponsesSse(
   upstream: Response,
+  signal?: AbortSignal,
 ): Promise<DrainedCodexResponses> {
   const toolCalls = new Map<string, { id: string; name: string; args: string }>();
   // codex `function_call_arguments.delta` events reference the parent
@@ -76,7 +77,7 @@ export async function drainCodexResponsesSse(
   let status = "completed";
   let usage: any = null;
 
-  for await (const { event, data } of readSseEvents(upstream)) {
+  for await (const { event, data } of readSseEvents(upstream, signal)) {
     if (!data) continue;
     switch (event) {
       case "response.output_text.delta":

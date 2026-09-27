@@ -176,13 +176,14 @@ export function createPortalHandlers(
     const controller = new AbortController();
     const onClose = () => controller.abort(new Error("client disconnected"));
     resp.on("close", onClose);
+    let upstream: Awaited<ReturnType<typeof callCodexResponses>> | undefined;
     try {
       // ChatGPT's Codex backend requires streaming and rejects public output caps.
       // The cap remains advisory until the transport can enforce it.
       const body = normalizeCodexResponsesBody(req.body);
       delete body.max_output_tokens;
       body.stream = true;
-      const upstream = await callCodexResponses({
+      upstream = await callCodexResponses({
         body,
         request: req,
         account,
@@ -190,6 +191,8 @@ export function createPortalHandlers(
         signal: controller.signal,
         rejectRedirects: true,
       });
+      if (resp.destroyed || resp.writableEnded) onClose();
+      controller.signal.throwIfAborted();
       if (!upstream.ok) {
         if (upstream.status === 429 || upstream.status >= 500) {
           codex().manager.recordFailure(
@@ -203,7 +206,10 @@ export function createPortalHandlers(
           "portal_upstream_error",
         );
       }
-      const drained = await drainCodexResponsesSse(upstream);
+      const drained = await drainCodexResponsesSse(upstream, controller.signal);
+      // A buffered/late terminal must not become a delivered success after the
+      // client disconnects, even if the fetch body ignored its abort signal.
+      if (controller.signal.aborted || resp.destroyed || resp.writableEnded) return;
       const terminal = drained.completedResponse;
       if (
         !terminal ||
@@ -256,6 +262,11 @@ export function createPortalHandlers(
       }
     } finally {
       resp.off("close", onClose);
+      // Also release a response that arrived after disconnect or was rejected
+      // before a reader was acquired. Never wait for provider acknowledgment.
+      if (upstream?.body && !upstream.body.locked) {
+        void upstream.body.cancel().catch(() => undefined);
+      }
     }
   };
   return { contract, responses };

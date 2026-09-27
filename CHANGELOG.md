@@ -26,3 +26,10 @@
   avoidable scope mismatch. If that account is unavailable, dispatch stops.
 - Require a nonempty terminal `output_text` part before the strict Portal route reports success, so a completed envelope without usable content cannot be mistaken for a publishable result.
 - Build the gateway image with the committed npm lockfile so the deployed dependencies match the verified candidate.
+
+## 2026-09-27 strict disconnect follow-up
+
+- Stop strict Portal response consumption when its client disconnects, cancel and
+  release the exact stream reader, and reject late terminal success before
+  accounting or publication. Ordinary routes keep their existing drain behavior.
+  Local cleanup does not prove provider cancellation and never authorizes retry.

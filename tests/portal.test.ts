@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import { EventEmitter } from "node:events";
+import { createPortalHandlers } from "../src/handlers/portal";
 import { AddressInfo } from "node:net";
 import { createServer } from "../src/server";
 import { buildRegistry } from "../src/providers/registry";
@@ -362,4 +364,112 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
     502,
   );
   assert.equal(calls, 8, "network ambiguity must not retry");
+});
+
+test("strict Portal disconnect cancels its exact stream and never publishes late success", async (t) => {
+  const oldBuild = process.env.AUTH2API_BUILD_ID;
+  const oldFetch = globalThis.fetch;
+  process.env.AUTH2API_BUILD_ID = BUILD;
+  t.after(() => {
+    globalThis.fetch = oldFetch;
+    if (oldBuild === undefined) delete process.env.AUTH2API_BUILD_ID;
+    else process.env.AUTH2API_BUILD_ID = oldBuild;
+  });
+  for (const scenario of ["midstream", "terminal-race", "late-fetch"] as const) {
+    await t.test(scenario, async () => {
+      const response = Object.assign(new EventEmitter(), {
+        destroyed: false,
+        writableEnded: false,
+        headersSent: false,
+        locals: {},
+        setHeader() {},
+        status() { return this; },
+        json() { writes++; return this; },
+      });
+      let writes = 0, attempts = 0, successes = 0, failures = 0, fetches = 0;
+      const account = {
+        accountUuid: "test-abort-account",
+        token: { email: "synthetic@example.com", accessToken: "synthetic-token" },
+      };
+      const manager = {
+        getNextAccount: () => ({ account }),
+        getAvailableAccounts: () => [account],
+        recordAttempt: () => attempts++,
+        recordSuccess: () => successes++,
+        recordFailure: () => failures++,
+      };
+      const handlers = createPortalHandlers({
+        "body-limit": "1mb", cloaking: {},
+        timeouts: { "messages-ms": 1000, "stream-messages-ms": 1000 },
+      } as any, { get: () => ({ manager }) } as any);
+      let contract: any;
+      handlers.contract({} as any, {
+        setHeader() {}, json(value: unknown) { contract = value; },
+      } as any);
+      const request = {
+        body: { model: MODEL, instructions: "synthetic", input: "synthetic", store: false, reasoning: { effort: "high" } },
+        headers: {},
+        header(name: string) {
+          return ({ "X-Auth2api-Contract": "portal-v1", "X-Auth2api-Build": BUILD, "X-Auth2api-Scope": contract.scope } as Record<string, string>)[name];
+        },
+      };
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      let cancellations = 0;
+      const body = new ReadableStream<Uint8Array>({
+        start(value) {
+          controller = value;
+          if (scenario === "terminal-race") {
+            value.enqueue(new TextEncoder().encode(terminal()));
+            value.close();
+          } else {
+            value.enqueue(new TextEncoder().encode(event("response.output_text.delta", { delta: "partial" })));
+          }
+        },
+        cancel() { cancellations++; },
+      });
+      const disconnect = () => {
+        response.destroyed = true;
+        response.emit("close");
+      };
+      if (scenario === "terminal-race") {
+        const getReader = body.getReader.bind(body);
+        body.getReader = (() => {
+          const reader = getReader();
+          const release = reader.releaseLock.bind(reader);
+          reader.releaseLock = () => { release(); disconnect(); };
+          return reader;
+        }) as typeof body.getReader;
+      }
+      let sentSignal: AbortSignal | undefined;
+      globalThis.fetch = async (_url: any, init?: RequestInit) => {
+        fetches++;
+        sentSignal = init?.signal as AbortSignal;
+        if (scenario === "late-fetch") disconnect();
+        // Deliberately ignore the fetch signal to model a late/buffered body.
+        return new Response(body);
+      };
+      const pending = handlers.responses(request as any, response as any);
+      if (scenario === "midstream") {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        disconnect();
+      }
+      if (scenario === "late-fetch") {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      if (scenario !== "terminal-race" && cancellations === 0) {
+        controller.enqueue(new TextEncoder().encode(terminal()));
+        controller.close();
+      }
+      await pending;
+      assert.equal(fetches, 1, "disconnect must never retry generation");
+      assert.equal(attempts, 1);
+      assert.equal(successes, 0, "late terminal must not become a delivered success");
+      assert.equal(failures, 0, "client disconnect is not provider failure or cancellation proof");
+      assert.equal(writes, 0, "never publish after client disconnect");
+      assert.equal(sentSignal?.aborted, true);
+      assert.equal(body.locked, false);
+      assert.equal(response.listenerCount("close"), 0);
+      if (scenario !== "terminal-race") assert.equal(cancellations, 1);
+    });
+  }
 });
