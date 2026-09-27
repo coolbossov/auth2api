@@ -13,3 +13,10 @@
   `portal_scope_mismatch`, fetch the contract again and requalify the selected
   account. The client must treat an upstream failure as potentially sent and
   must not blindly retry.
+
+## 2026-09-27 follow-up
+
+- Pinned strict POST dispatch to the exact available Codex account represented
+  by the qualified scope. This prevents ordinary sticky-pool rotation between
+  contract discovery and generation from changing the account or producing an
+  avoidable scope mismatch. If that account is unavailable, dispatch stops.

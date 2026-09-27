@@ -15,3 +15,8 @@ syntax, not live account entitlement or quality. Portal streaming is disabled
 until a terminal-validated streaming contract is designed. The Codex backend
 rejects `max_output_tokens`, so its value remains advisory and the contract
 reports that no hard output cap is enforced.
+
+POST resolves the requested scope against available Codex accounts directly.
+The generic sticky account pointer can rotate between contract discovery and
+generation without changing the selected Portal account. A cooling-down or
+missing qualified account fails before dispatch; no other account is chosen.

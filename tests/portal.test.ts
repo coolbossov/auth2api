@@ -142,6 +142,7 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   let calls = 0;
   let upstreamBody: any = null;
   let upstreamRedirect: RequestRedirect | undefined;
+  let upstreamAuthorization: string | undefined;
   let nextResponse = () =>
     new Response(terminal(), {
       status: 200,
@@ -151,6 +152,8 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
     calls++;
     upstreamBody = JSON.parse(String(init?.body));
     upstreamRedirect = init?.redirect;
+    upstreamAuthorization = (init?.headers as Record<string, string>)
+      ?.Authorization;
     return nextResponse();
   };
 
@@ -226,6 +229,20 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   );
   assert.equal(calls, 0);
 
+  const otherToken = {
+    ...token,
+    accessToken: "other-access",
+    email: "other-codex@example.com",
+    accountUuid: "other-account",
+  };
+  registry.get("codex").manager.addAccount(otherToken);
+  // Force the ordinary sticky pool to rotate between GET and POST. The POST
+  // must still use the account represented by the original qualified scope.
+  (registry.get("codex").manager as any).stickyUntil = 0;
+  const switched = await request("/v1/portal/contract");
+  assert.equal(switched.status, 200);
+  assert.notEqual(switched.body.scope, contract.body.scope);
+
   const success = await request("/v1/portal/responses", body, headers);
   assert.equal(success.status, 200);
   assert.equal(success.body.model, MODEL);
@@ -246,6 +263,7 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   assert.equal(upstreamBody.store, false);
   assert.equal(upstreamBody.max_output_tokens, undefined);
   assert.equal(upstreamRedirect, "error");
+  assert.equal(upstreamAuthorization, "Bearer test-access");
   assert.equal(calls, 1);
 
   nextResponse = () => new Response("", { status: 401 });
@@ -291,15 +309,8 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
     429,
   );
   assert.equal(calls, 7, "429 must not retry");
-  const otherToken = {
-    ...token,
-    email: "other-codex@example.com",
-    accountUuid: "other-account",
-  };
-  registry.get("codex").manager.addAccount(otherToken);
-  const switched = await request("/v1/portal/contract");
-  assert.equal(switched.status, 200);
-  assert.notEqual(switched.body.scope, contract.body.scope);
+  const current = await request("/v1/portal/contract");
+  assert.equal(current.body.scope, switched.body.scope);
   assert.equal(
     (await request("/v1/portal/responses", body, headers)).status,
     409,

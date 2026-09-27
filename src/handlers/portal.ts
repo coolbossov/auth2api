@@ -136,12 +136,23 @@ export function createPortalHandlers(
     }
     if (!validRequest(req.body))
       return fail(resp, 400, "portal_request_invalid");
-    const account = select();
-    if (!account) return fail(resp, 503, "portal_codex_account_unavailable");
-    const scope = scopeFor(account.accountUuid, account.token.planType);
-    if (req.header("X-Auth2api-Scope") !== scope) {
+    const requestedScope = req.header("X-Auth2api-Scope")!;
+    if (!/^[0-9a-f]{64}$/.test(requestedScope)) {
       return fail(resp, 409, "portal_scope_mismatch");
     }
+    // A generic sticky selection may rotate after the GET contract. Search
+    // available Codex accounts by the exact scope the caller qualified; never
+    // select a different account or dispatch when that account is unavailable.
+    const account = codex()
+      .manager.getAvailableAccounts()
+      .find(
+        (candidate) =>
+          candidate.accountUuid &&
+          scopeFor(candidate.accountUuid, candidate.token.planType) ===
+            requestedScope,
+      );
+    if (!account) return fail(resp, 409, "portal_scope_mismatch");
+    const scope = requestedScope;
 
     const model = req.body.model as string;
     tagStatsModel(resp, model, "codex");

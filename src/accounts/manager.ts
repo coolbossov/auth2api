@@ -406,6 +406,18 @@ export class AccountManager {
     };
   }
 
+  /** Available candidates for a caller that must pin an exact account scope. */
+  getAvailableAccounts(): AvailableAccount[] {
+    const now = Date.now();
+    return this.accountOrder.flatMap((email) => {
+      const acct = this.accounts.get(email);
+      if (!acct || acct.cooldownUntil > now) return [];
+      return [
+        buildAvailableAccount(this.authDir, email, acct.token, this.provider),
+      ];
+    });
+  }
+
   recordAttempt(email: string): void {
     const acct = this.accounts.get(email);
     if (acct) {

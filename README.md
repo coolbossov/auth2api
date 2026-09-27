@@ -240,7 +240,9 @@ when those inputs change, so clients must requalify after a scope change.
 `X-Auth2api-Contract: portal-v1`, `X-Auth2api-Build: <build>` and
 `X-Auth2api-Scope: <scope>`. It accepts the exact models listed by the contract,
 an explicit reasoning effort, `store: false`, and a non-streaming Responses
-request. The gateway selects Codex directly, checks the selected account and
+request. The gateway selects Codex directly, finds the exact available account
+represented by the supplied scope even if the general pool has rotated, checks
+the account and
 all preconditions before forwarding, and makes at most one upstream generation
 request. It returns a response only after a completed upstream event with the
 exact requested model and output items. Successful responses carry gateway-owned
