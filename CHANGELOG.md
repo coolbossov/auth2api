@@ -16,6 +16,8 @@
 
 ## 2026-09-27 follow-up
 
+- Added exact identity headers to contract discovery so clients can verify the
+  source of the contract before qualifying a model/account combination.
 - Pinned strict POST dispatch to the exact available Codex account represented
   by the qualified scope. This prevents ordinary sticky-pool rotation between
   contract discovery and generation from changing the account or producing an

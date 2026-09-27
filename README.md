@@ -235,6 +235,8 @@ An image built without that argument leaves both Portal routes unavailable
 (`503`); the ordinary API routes continue to work. `scope` is an opaque,
 stable digest of the selected Codex account, plan tier and build. It changes
 when those inputs change, so clients must requalify after a scope change.
+The authenticated GET response also carries the provider, contract, build,
+and scope identity headers used on successful generation responses.
 
 `POST /v1/portal/responses` requires the normal API key plus
 `X-Auth2api-Contract: portal-v1`, `X-Auth2api-Build: <build>` and

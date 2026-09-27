@@ -107,10 +107,12 @@ export function createPortalHandlers(
     if (!buildVerified) return fail(resp, 503, "portal_build_unverified");
     const account = select();
     if (!account) return fail(resp, 503, "portal_codex_account_unavailable");
+    const scope = scopeFor(account.accountUuid, account.token.planType);
+    identityHeaders(resp, scope);
     resp.json({
       contract: CONTRACT,
       build,
-      scope: scopeFor(account.accountUuid, account.token.planType),
+      scope,
       capabilities: {
         provider: "codex",
         models: MODELS,

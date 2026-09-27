@@ -108,6 +108,10 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   assert.equal(contract.body.capabilities.requestBodyLimit, "1mb");
   assert.ok(contract.body.capabilities.models.includes(MODEL));
   assert.match(contract.body.scope, /^[0-9a-f]{64}$/);
+  assert.equal(contract.headers.get("X-Auth2api-Provider"), "codex");
+  assert.equal(contract.headers.get("X-Auth2api-Contract"), contract.body.contract);
+  assert.equal(contract.headers.get("X-Auth2api-Build"), contract.body.build);
+  assert.equal(contract.headers.get("X-Auth2api-Scope"), contract.body.scope);
   const unauthenticated = await oldFetch(
     `http://127.0.0.1:${port}/v1/portal/contract`,
   );
