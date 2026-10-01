@@ -7,6 +7,7 @@ import path from "node:path";
 import { saveToken } from "../src/auth/token-storage";
 import { buildRegistry } from "../src/providers/registry";
 import { __resetCodexModelsCache } from "../src/upstream/codex-models";
+import { DEFAULT_CODEX_CLI_VERSION, codexCliVersion } from "../src/upstream/codex-version";
 import type { Config } from "../src/config";
 
 function config(authDir: string, version: string): Config {
@@ -77,4 +78,10 @@ test("Codex model catalog uses the configured client version and isolates its ca
     __resetCodexModelsCache();
     fs.rmSync(authDir, { recursive: true, force: true });
   }
+});
+
+test("default Codex client version discovers Sol 6.1 while preserving configured overrides", () => {
+  assert.equal(DEFAULT_CODEX_CLI_VERSION, "0.159.2");
+  assert.equal(codexCliVersion(), "0.159.2");
+  assert.equal(codexCliVersion(config("unused", "0.156.1")), "0.156.1");
 });
