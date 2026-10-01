@@ -33,3 +33,7 @@
   release the exact stream reader, and reject late terminal success before
   accounting or publication. Ordinary routes keep their existing drain behavior.
   Local cleanup does not prove provider cancellation and never authorizes retry.
+
+## 2026-10-01
+
+- Route `gpt-6.1-sol` through Codex rather than the Anthropic fallback and use Codex client version 0.159.2 for discovery and generation, so the connected account can expose Sol 6.1. Preserve Luna 6, older model routes, and explicit version overrides.

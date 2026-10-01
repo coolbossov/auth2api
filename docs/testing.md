@@ -24,3 +24,7 @@ These local tests do not prove live account access or model capacity. For a
 release, verify the exact image revision, authenticated contract response,
 reverse-proxy path and header preservation, then run a bounded real canary
 under the Portal release plan before activating policy defaults.
+
+Run `npm ci`, `npm test`, and `npm run build` before release. Tests use synthetic accounts and mocked upstream calls; they must not load production OAuth state. Model changes require routing, catalog/version, and Portal contract tests.
+
+Production acceptance uses authenticated model discovery and bounded synthetic generation through `https://ai.sapicture.day`: require the exact requested model, completed response, and expected output. Use structured Responses input. Never print gateway credentials, OAuth state, or customer content. No isolated hosted staging gateway is currently documented; mocked local HTTP tests and bounded live acceptance cover this release.

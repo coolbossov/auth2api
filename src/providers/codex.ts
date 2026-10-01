@@ -18,9 +18,9 @@ const CODEX_OAUTH: ProviderOAuthInfo = {
   callbackPath: CODEX_CALLBACK_PATH,
 };
 
-// GPT-6 has three explicitly supported IDs; older Codex families retain their
+// GPT-6 and GPT-6.1 Sol have explicitly supported IDs; older Codex families retain their
 // existing matching rules. Unknown IDs still follow the registry fallback.
-const MODEL_RE = /^(gpt-6-(astra|sol|luna)$|gpt-5(\.|-)|gpt-5$|o\d|codex-)/i;
+const MODEL_RE = /^(gpt-6-(astra|sol|luna)$|gpt-6\.1-sol$|gpt-5(\.|-)|gpt-5$|o\d|codex-)/i;
 
 export function buildCodexProvider(authDir: string, config?: Config): Provider {
   const manager = new AccountManager(authDir, {

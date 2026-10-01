@@ -17,6 +17,7 @@ const MODELS = [
   "gpt-5.6-luna",
   "gpt-6-luna",
   "gpt-6-sol",
+  "gpt-6.1-sol",
   "gpt-6-astra",
 ] as const;
 const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;

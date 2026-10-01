@@ -20,3 +20,7 @@ POST resolves the requested scope against available Codex accounts directly.
 The generic sticky account pointer can rotate between contract discovery and
 generation without changing the selected Portal account. A cooling-down or
 missing qualified account fails before dispatch; no other account is chosen.
+
+## 2026-10-01: Explicit Sol 6.1 support
+
+Allow only the exact `gpt-6.1-sol` ID alongside existing GPT-6 routes, preserving unknown-model fallback behavior. Advertise it in the strict Portal contract. Advance the shared default Codex discovery/generation client version to 0.159.2: a read-only query with the existing account confirmed this version exposes Sol 6.1 while 0.156.1 does not. Explicit configured version overrides remain authoritative. Do not change existing client model selections or OAuth accounts.
