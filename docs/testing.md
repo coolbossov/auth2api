@@ -28,3 +28,9 @@ under the Portal release plan before activating policy defaults.
 Run `npm ci`, `npm test`, and `npm run build` before release. Tests use synthetic accounts and mocked upstream calls; they must not load production OAuth state. Model changes require routing, catalog/version, and Portal contract tests.
 
 Production acceptance uses authenticated model discovery and bounded synthetic generation through `https://ai.sapicture.day`: require the exact requested model, completed response, and expected output. Use structured Responses input. Never print gateway credentials, OAuth state, or customer content. No isolated hosted staging gateway is currently documented; mocked local HTTP tests and bounded live acceptance cover this release.
+
+## JSON keepalive acceptance
+
+Run `PORTAL_LONG_RESPONSE_TEST=1 node --import tsx --test tests/portal.test.ts` for the synthetic 130-second upstream test. It uses a local HTTP server and no provider work. Require whitespace before the 125-second boundary, exactly one completed terminal JSON value, unchanged model/identity and one upstream attempt. Focused tests also cover backpressure, cleanup, disconnect, deadline, short-error status preservation and a post-header error recorded as a failure. No model output, private source, credentials or raw provider errors are written in heartbeat bytes.
+
+After deployment, verify the actual public contract's new build and keepalive capability and run qualified bounded synthetic requests through Portal. The local 130-second server test proves gateway transport behavior, not Cloudflare behavior or natural meeting quality. Verify real recording completion independently and preserve uncertain generations.

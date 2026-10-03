@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-02
+
+- Add optional `json-keepalive-v1` transport for the strict Portal endpoint so long reasoning does not leave the proxy waiting silently. It writes only bounded JSON whitespace before one validated terminal response; existing callers retain buffered JSON behavior.
+- Preserve pre-header HTTP errors and report a typed terminal error when headers have already started. Record those errors as failures in gateway statistics. Keep one upstream attempt, exact model/account identity, cancellation and a nine-minute maximum transport deadline.
+
 ## 2026-09-27
 
 - Added authenticated Portal contract and strict Codex Responses routes so the

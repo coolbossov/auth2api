@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-02: Optional long-response JSON transport
+
+Portal's reasoning requests can exceed the reverse proxy's initial response wait. Use an opt-in `X-Auth2api-Response-Transport: json-keepalive-v1` header instead of changing provider, proxy settings or streaming model output. The gateway advertises this capability and echoes the header; every 15 seconds it writes JSON whitespace, never partial model output. Clients parse one final JSON value and still require completed status, exact model and gateway identity.
+
+The HTTP status cannot change once whitespace has started. Errors then use an explicit versioned error envelope with `error.httpStatus`; clients must reject it and must not infer success from HTTP 200. Gateway statistics record the logical failure status. Cancellation and the 540-second gateway ceiling stop transport work; neither proves the upstream generation stopped. Ambiguous attempts remain uncertain and cannot be blindly retried. Source-build identity changes require Portal qualification against the new build/account scope.
+
 ## 2026-09-27: Dedicated Portal Responses contract
 
 The Portal requires exact provider and model attribution. The generic gateway

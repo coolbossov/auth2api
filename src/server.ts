@@ -154,12 +154,13 @@ export function createServer(
             accountEmail: string | null;
             usage: any;
             failureKind: string | null;
+            logicalStatusCode?: number;
           }
         | undefined;
       if (!ctx) return;
       const status: "success" | "failure" =
         override?.status ??
-        (res.statusCode >= 200 && res.statusCode < 300 ? "success" : "failure");
+        ((ctx.logicalStatusCode ?? res.statusCode) >= 200 && (ctx.logicalStatusCode ?? res.statusCode) < 300 ? "success" : "failure");
       statsRecorder.record({
         apiKeyHash: ctx.apiKeyHash,
         ip: ctx.ip,
@@ -170,7 +171,7 @@ export function createServer(
         accountEmail: ctx.accountEmail,
         status,
         failureKind: override?.failureKind ?? ctx.failureKind,
-        statusCode: override?.statusCode ?? res.statusCode,
+        statusCode: override?.statusCode ?? ctx.logicalStatusCode ?? res.statusCode,
         latencyMs: Date.now() - ctx.startedAt,
         usage: ctx.usage,
       });
