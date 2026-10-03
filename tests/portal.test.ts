@@ -10,6 +10,7 @@ import { AddressInfo } from "node:net";
 import { createServer } from "../src/server";
 import { buildRegistry } from "../src/providers/registry";
 import { saveToken } from "../src/auth/token-storage";
+import { StatsRecorder } from "../src/stats/recorder";
 import { Config } from "../src/config";
 
 const BUILD = "a".repeat(40);
@@ -68,7 +69,9 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
   };
   const registry = buildRegistry(authDir, config);
   for (const provider of registry.all()) provider.manager.load();
-  const server = http.createServer(createServer(config, registry));
+  const recorder = new StatsRecorder();
+  recorder.start(authDir);
+  const server = http.createServer(createServer(config, registry, recorder));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(async () => {
     globalThis.fetch = oldFetch;
@@ -77,6 +80,7 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
     await new Promise<void>((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),
     );
+    await recorder.stop();
     fs.rmSync(authDir, { recursive: true, force: true });
   });
 
@@ -365,6 +369,53 @@ test("strict Portal contract selects Codex and dispatches at most once", async (
     502,
   );
   assert.equal(calls, 8, "network ambiguity must not retry");
+  registry.get("codex").manager.addAccount(otherToken);
+  const keepaliveHeaders = { ...headers, "X-Auth2api-Scope": switched.body.scope, "X-Auth2api-Response-Transport": "json-keepalive-v1" };
+  nextResponse = () => new Response(terminal(), { status: 200 });
+  const opted = await request("/v1/portal/responses", body, keepaliveHeaders);
+  assert.equal(opted.body.status, "completed");
+  assert.equal(opted.headers.get("x-auth2api-response-transport"), "json-keepalive-v1");
+  assert.equal(calls, 9);
+  nextResponse = () => new Response("", { status: 429 });
+  const optedError = await request("/v1/portal/responses", body, keepaliveHeaders);
+  assert.equal(optedError.status, 429);
+  assert.equal(optedError.body.error.httpStatus, 429);
+  assert.equal(calls, 10);
+  registry.get("codex").manager.addAccount(otherToken);
+  if (process.env.PORTAL_KEEPALIVE_ERROR_TEST === "1") {
+    const beforeFailures = recorder.getSnapshot().totals.failures;
+    nextResponse = () => new Response(new ReadableStream({ start(controller) {
+      setTimeout(() => { controller.enqueue(new TextEncoder().encode(terminal("wrong-model"))); controller.close(); }, 16_000);
+    } }), { status: 200 });
+    const delayedError = await request("/v1/portal/responses", body, keepaliveHeaders);
+    assert.equal(delayedError.status, 200);
+    assert.equal(delayedError.body.error.httpStatus, 502);
+    assert.equal(delayedError.body.error.type, "portal_terminal_invalid");
+    assert.equal(recorder.getSnapshot().totals.failures, beforeFailures + 1);
+    assert.equal(calls, 11, "post-header failure must not retry");
+  }
+  if (process.env.PORTAL_LONG_RESPONSE_TEST === "1") {
+    config.timeouts["stream-messages-ms"] = 180_000;
+    nextResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        const timer = setTimeout(() => { controller.enqueue(new TextEncoder().encode(terminal())); controller.close(); }, 130_000);
+        timer.unref();
+      },
+    }), { status: 200 });
+    const started = Date.now();
+    const longResponse = await oldFetch(`http://127.0.0.1:${port}/v1/portal/responses`, {
+      method: "POST", headers: { Authorization: "Bearer test-key", "Content-Type": "application/json", ...keepaliveHeaders }, body: JSON.stringify(body),
+    });
+    assert.ok(Date.now() - started < 30_000, "first keepalive arrives before proxy timeout");
+    assert.equal(longResponse.headers.get("x-auth2api-response-transport"), "json-keepalive-v1");
+    const reader = longResponse.body!.getReader(); let text = ""; let heartbeats = 0;
+    try {
+      for (;;) { const chunk = await reader.read(); if (chunk.done) break; const value = new TextDecoder().decode(chunk.value); if (/^\s+$/.test(value)) heartbeats++; text += value; }
+    } finally { reader.releaseLock(); }
+    assert.ok(Date.now() - started >= 125_000); assert.ok(heartbeats >= 8);
+    assert.equal(JSON.parse(text).status, "completed"); assert.equal(calls, 11, "long response uses one generation");
+  }
+
 });
 
 test("strict Portal disconnect cancels its exact stream and never publishes late success", async (t) => {

@@ -9,6 +9,8 @@ import {
 } from "../upstream/codex-api";
 import { drainCodexResponsesSse } from "../upstream/responses-translator";
 
+import { createPortalJsonKeepalive, PORTAL_JSON_TRANSPORT, PORTAL_JSON_KEEPALIVE_MS, PORTAL_JSON_DEADLINE_MS } from "./portal-json-keepalive";
+
 const CONTRACT = "portal-v1";
 const MODELS = [
   "gpt-5.5",
@@ -129,6 +131,7 @@ export function createPortalHandlers(
         models: MODELS,
         reasoningEfforts: EFFORTS,
         streaming: false,
+        jsonKeepalive: { transport: PORTAL_JSON_TRANSPORT, intervalMs: PORTAL_JSON_KEEPALIVE_MS, deadlineMs: PORTAL_JSON_DEADLINE_MS },
         enforcedOutputCap: false,
         requestBodyLimit: config["body-limit"],
         requestBodyLimitBytes: configuredBodyLimitBytes,
@@ -149,6 +152,8 @@ export function createPortalHandlers(
     ) {
       return fail(resp, 409, "portal_contract_mismatch");
     }
+    const requestedTransport = req.header("X-Auth2api-Response-Transport");
+    if (requestedTransport !== undefined && requestedTransport !== PORTAL_JSON_TRANSPORT) return fail(resp, 400, "portal_transport_invalid");
     if (!validRequest(req.body))
       return fail(resp, 400, "portal_request_invalid");
     const requestedScope = req.header("X-Auth2api-Scope")!;
@@ -175,8 +180,21 @@ export function createPortalHandlers(
     if (stats) stats.accountEmail = account.token.email;
     codex().manager.recordAttempt(account.token.email);
     const controller = new AbortController();
-    const onClose = () => controller.abort(new Error("client disconnected"));
+    let transport: ReturnType<typeof createPortalJsonKeepalive> | undefined;
+    const onClose = () => {
+      controller.abort(new Error("client disconnected"));
+      transport?.dispose();
+    };
     resp.on("close", onClose);
+    transport = requestedTransport === PORTAL_JSON_TRANSPORT
+      ? createPortalJsonKeepalive(resp, controller, () => identityHeaders(resp, scope), () => responseFail(504, "portal_response_deadline")) : undefined;
+    const responseFail = (status: number, code: string) => {
+      if (resp.locals.stats) {
+        resp.locals.stats.failureKind = code;
+        resp.locals.stats.logicalStatusCode = status;
+      }
+      return transport ? transport.fail(status, code) : fail(resp, status, code);
+    };
     let upstream: Awaited<ReturnType<typeof callCodexResponses>> | undefined;
     try {
       // ChatGPT's Codex backend requires streaming and rejects public output caps.
@@ -201,8 +219,7 @@ export function createPortalHandlers(
             upstream.status === 429 ? "rate_limit" : "server",
           );
         }
-        return fail(
-          resp,
+        return responseFail(
           upstream.status === 429 ? 429 : 502,
           "portal_upstream_error",
         );
@@ -220,7 +237,7 @@ export function createPortalHandlers(
         !Array.isArray(terminal.output) ||
         !Array.isArray(drained.outputItems)
       ) {
-        return fail(resp, 502, "portal_terminal_invalid");
+        return responseFail(502, "portal_terminal_invalid");
       }
       const hasOutputText = (items: unknown[]): boolean =>
         items.some((item) =>
@@ -236,7 +253,7 @@ export function createPortalHandlers(
       const output = hasOutputText(terminal.output)
         ? terminal.output
         : drained.outputItems;
-      if (!hasOutputText(output)) return fail(resp, 502, "portal_output_missing");
+      if (!hasOutputText(output)) return responseFail(502, "portal_output_missing");
       const usage = drained.usage;
       codex().manager.recordSuccess(account.token.email, {
         inputTokens: usage?.input_tokens || 0,
@@ -254,14 +271,15 @@ export function createPortalHandlers(
         reasoningOutputTokens:
           usage?.output_tokens_details?.reasoning_tokens || 0,
       });
-      identityHeaders(resp, scope);
-      resp.json({ ...terminal, output });
+      if (transport) transport.finish({ ...terminal, output });
+      else { identityHeaders(resp, scope); resp.json({ ...terminal, output }); }
     } catch {
-      if (!controller.signal.aborted && !resp.headersSent) {
+      if ((!controller.signal.aborted || transport?.deadlineReached()) && !resp.destroyed && !resp.writableEnded) {
         codex().manager.recordFailure(account.token.email, "network");
-        fail(resp, 502, "portal_upstream_error");
+        responseFail(transport?.deadlineReached() ? 504 : 502, transport?.deadlineReached() ? "portal_response_deadline" : "portal_upstream_error");
       }
     } finally {
+      transport?.dispose();
       resp.off("close", onClose);
       // Also release a response that arrived after disconnect or was rejected
       // before a reader was acquired. Never wait for provider acknowledgment.
